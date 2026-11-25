@@ -10,7 +10,8 @@ Portable Pi coding agent environment — custom extensions, theme, config templa
 │   ├── compact-ui.ts        # Compact tool rendering (bg-highlighted when expanded), thought previews, /clear alias for /new
 │   ├── optchat-session.ts   # Per-session OptChat profiles, right-aligned compact footer stats, native compaction events
 │   ├── prompt-stash.ts      # Native prompt editor: '>' idle caret (hidden on '!'), inline spinner, persisted interactive stash picker ('≡' badge), compaction border
-│   └── ask-questions.ts     # Restyled interactive structured-question TUI (forked from pi-questions)
+│   ├── ask-questions.ts     # Restyled interactive structured-question TUI (forked from pi-questions)
+│   └── rex-resume.ts        # OSC 7577 Program Resume reporter so Rex automatically resumes Pi sessions across server restarts
 ├── themes/
 │   └── clean-dark.json      # Ghostty/Rex-inspired dark theme with charcoal surfaces and crisp primaries
 ├── config/

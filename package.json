@@ -12,7 +12,8 @@
       "./extensions/compact-ui.ts",
       "./extensions/optchat-session.ts",
       "./extensions/prompt-stash.ts",
-      "./extensions/ask-questions.ts"
+      "./extensions/ask-questions.ts",
+      "./extensions/rex-resume.ts"
     ],
     "themes": [
       "./themes/clean-dark.json"
