@@ -1,0 +1,28 @@
+{
+  "name": "@abhi-arya1/pi-extensions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Portable Pi coding agent environment: extensions, themes, config, and bootstrap script.",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/compact-ui.ts",
+      "./extensions/optchat-session.ts",
+      "./extensions/prompt-stash.ts",
+      "./extensions/ask-questions.ts"
+    ],
+    "themes": [
+      "./themes/clean-dark.json"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}

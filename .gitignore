@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+*.log
+.env
+auth.json
+mcp-auth.json
+models-store.json
+sessions/
+web-search-cache/
