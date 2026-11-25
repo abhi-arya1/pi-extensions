@@ -449,14 +449,4 @@ export default function compactUiExtension(pi: ExtensionAPI) {
 		return buildGenericCompactRenderer(toolName, fallback);
 	});
 
-	// 3. Steering priority: make mid-run user steering impossible for the model to ignore.
-	pi.on("before_agent_start", (event) => {
-		const rules = event.systemPromptOptions.promptGuidelines ?? [];
-		const steeringRule =
-			"Mid-run user steering messages override your current plan immediately. Stop whatever step you were about to do, acknowledge the steering briefly, and follow the new direction first.";
-		if (!rules.includes(steeringRule)) {
-			event.systemPromptOptions.promptGuidelines = [...rules, steeringRule];
-		}
-	});
-
 }
