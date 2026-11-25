@@ -41,6 +41,12 @@ for theme in "$REPO_DIR"/themes/*.json; do
   echo "  theme: $name -> $theme"
 done
 
+# 2b. Symlink APPEND_SYSTEM.md (global system prompt addendum, applies to both plain Pi and OptChat)
+if [[ -f "$REPO_DIR/config/APPEND_SYSTEM.md" ]]; then
+  run ln -sfn "$REPO_DIR/config/APPEND_SYSTEM.md" "$PI_DIR/APPEND_SYSTEM.md"
+  echo "  sys:   APPEND_SYSTEM.md -> $REPO_DIR/config/APPEND_SYSTEM.md"
+fi
+
 # 3. Merge settings.json (preserves machine-specific keys like deviceId, lastChangelogVersion, extensionChangelogVersions)
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "[dry-run] merge $REPO_DIR/config/settings.json -> $PI_DIR/settings.json"
