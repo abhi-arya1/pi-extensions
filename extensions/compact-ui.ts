@@ -449,4 +449,14 @@ export default function compactUiExtension(pi: ExtensionAPI) {
 		return buildGenericCompactRenderer(toolName, fallback);
 	});
 
+	// 3. /clear alias for /new (start a fresh session).
+	pi.registerCommand("clear", {
+		description: "Start a new session (alias for /new)",
+		handler: async (_args, ctx) => {
+			const res = await ctx.newSession();
+			if (!res.cancelled && ctx.hasUI) {
+				ctx.ui.notify("New session started", "info");
+			}
+		},
+	});
 }
