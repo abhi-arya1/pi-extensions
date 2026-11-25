@@ -73,7 +73,7 @@ export function ensureSessionProfile(name: string, home = optchatHome()): string
   if (!existsSync(configPath)) {
     const config = {
       compactor: { provider: "openrouter", model: "upstage/solar-mini-4-5", thinking: "off" },
-      subagent: { provider: "anthropic", model: "claude-opus-5-5", thinking: "high" },
+      subagent: { provider: "devin", model: "gemini-4-neon", thinking: "medium" },
       subagentLevels: 1,
       maxAgents: 8,
       groupReports: false,
