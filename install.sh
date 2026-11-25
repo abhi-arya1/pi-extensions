@@ -47,6 +47,12 @@ if [[ -f "$REPO_DIR/config/APPEND_SYSTEM.md" ]]; then
   echo "  sys:   APPEND_SYSTEM.md -> $REPO_DIR/config/APPEND_SYSTEM.md"
 fi
 
+# 2c. Symlink web-search.json (pi-web-access routing: free Exa default + OpenRouter fallback, no secrets)
+if [[ -f "$REPO_DIR/config/web-search.json" ]]; then
+  run ln -sfn "$REPO_DIR/config/web-search.json" "$PI_DIR/web-search.json"
+  echo "  cfg:   web-search.json -> $REPO_DIR/config/web-search.json"
+fi
+
 # 3. Merge settings.json (preserves machine-specific keys like deviceId, lastChangelogVersion, extensionChangelogVersions)
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "[dry-run] merge $REPO_DIR/config/settings.json -> $PI_DIR/settings.json"

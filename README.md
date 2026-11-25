@@ -16,6 +16,7 @@ Portable Pi coding agent environment — custom extensions, theme, config templa
 │   └── clean-dark.json      # Ghostty/Rex-inspired dark theme with charcoal surfaces and crisp primaries
 ├── config/
 │   ├── APPEND_SYSTEM.md     # Global system prompt addendum (Executor-first, Executor Skills, gh CLI for GitHub, steering priority)
+│   ├── web-search.json      # pi-web-access routing (free Exa default + OpenRouter Responses fallback, no secrets)
 │   ├── settings.json        # Portable Pi settings (packages, theme, codemode: on, steering: all, compaction)
 │   ├── mcp.json             # Global MCP server definitions (Executor)
 │   └── models.json          # Local model provider definitions (llama-cpp)

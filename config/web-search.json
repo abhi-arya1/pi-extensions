@@ -1,0 +1,9 @@
+{
+  "openaiResponsesUrl": "https://openrouter.ai/api/v1/responses",
+  "openaiSearchProviders": ["openrouter"],
+  "openaiSearchModel": "openai/gpt-6-luna",
+  "searchRouting": {
+    "providers": ["exa", "openai"],
+    "fallbackOn": ["transient", "quota", "network", "invalid-response", "empty"]
+  }
+}
