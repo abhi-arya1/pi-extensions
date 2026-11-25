@@ -18,8 +18,6 @@ Portable Pi coding agent environment — custom extensions, theme, config templa
 │   ├── settings.json        # Portable Pi settings (packages, theme, codemode: on, steering: all, compaction)
 │   ├── mcp.json             # Global MCP server definitions (Executor)
 │   └── models.json          # Local model provider definitions (llama-cpp)
-├── patches/
-│   └── pi-better-devin-auth-footer.patch  # Integrates optchat-compact into Devin's 2-line footer
 ├── package.json             # Pi package manifest (so this repo is also installable as a Pi package)
 └── install.sh               # Idempotent symlink + config-merge bootstrapper
 ```

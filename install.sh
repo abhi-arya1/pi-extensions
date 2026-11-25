@@ -82,19 +82,5 @@ for cfg in mcp.json models.json; do
   fi
 done
 
-# 5. Apply pi-better-devin-auth footer patch if installed and not yet applied
-DEVIN_REPO="$PI_DIR/git/github.com/zhuasy/pi-better-devin-auth"
-PATCH_FILE="$REPO_DIR/patches/pi-better-devin-auth-footer.patch"
-if [[ -d "$DEVIN_REPO/.git" && -f "$PATCH_FILE" ]]; then
-  if git -C "$DEVIN_REPO" apply --reverse --check "$PATCH_FILE" >/dev/null 2>&1; then
-    echo "  patch: pi-better-devin-auth footer patch already applied"
-  elif git -C "$DEVIN_REPO" apply --check "$PATCH_FILE" >/dev/null 2>&1; then
-    run git -C "$DEVIN_REPO" apply "$PATCH_FILE"
-    echo "  patch: applied pi-better-devin-auth footer patch"
-  else
-    echo "  patch: skipped pi-better-devin-auth (local diff or upstream changed)"
-  fi
-fi
-
 echo ""
 echo "Done. Run 'pi update --extensions' on a new machine to install packages, then '/reload' inside Pi."
