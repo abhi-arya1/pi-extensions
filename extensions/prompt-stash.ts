@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
@@ -13,6 +16,51 @@ type OptchatBannerState =
 interface StashEntry {
 	text: string;
 	createdAt: number;
+}
+
+function stashDir(): string {
+	return path.join(os.homedir(), ".pi", "agent", "prompt-stash");
+}
+
+function stashPathForSession(sessionId: string): string {
+	const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || "default";
+	return path.join(stashDir(), `${safe}.json`);
+}
+
+function loadSessionStash(sessionId: string): StashEntry[] {
+	try {
+		const file = stashPathForSession(sessionId);
+		if (!existsSync(file)) return [];
+		const raw = JSON.parse(readFileSync(file, "utf8"));
+		if (!Array.isArray(raw)) return [];
+		const out: StashEntry[] = [];
+		for (const item of raw) {
+			if (item && typeof item.text === "string" && item.text.trim()) {
+				out.push({
+					text: item.text,
+					createdAt: typeof item.createdAt === "number" ? item.createdAt : Date.now(),
+				});
+			}
+		}
+		return out.slice(-MAX_STASH);
+	} catch {
+		return [];
+	}
+}
+
+function saveSessionStash(sessionId: string | undefined, stack: StashEntry[]): void {
+	if (!sessionId) return;
+	try {
+		const file = stashPathForSession(sessionId);
+		if (stack.length === 0) {
+			if (existsSync(file)) unlinkSync(file);
+			return;
+		}
+		mkdirSync(stashDir(), { recursive: true });
+		writeFileSync(file, JSON.stringify(stack, null, 2), "utf8");
+	} catch {
+		// ignore persistence errors
+	}
 }
 
 function oneLine(s: string, max = 80): string {
@@ -33,13 +81,18 @@ function relativeTime(ts: number): string {
 }
 
 export default function promptStashExtension(pi: ExtensionAPI) {
-	const stack: StashEntry[] = [];
+	let stack: StashEntry[] = [];
+	let currentSessionId: string | undefined;
 	let unsubInput: (() => void) | undefined;
 	let requestRender: (() => void) | undefined;
 	let optchatState: OptchatBannerState = { kind: "idle" };
 	let spinnerFrame = 0;
 	let spinnerTimer: ReturnType<typeof setInterval> | undefined;
 	let pickerOpen = false;
+
+	function persist() {
+		saveSessionStash(currentSessionId, stack);
+	}
 
 	function triggerRender() {
 		requestRender?.();
@@ -218,6 +271,7 @@ export default function promptStashExtension(pi: ExtensionAPI) {
 			stack.push({ text, createdAt: Date.now() });
 			if (stack.length > MAX_STASH) stack.shift();
 		}
+		persist();
 		triggerRender();
 		return true;
 	}
@@ -230,6 +284,7 @@ export default function promptStashExtension(pi: ExtensionAPI) {
 			stack.push({ text: current, createdAt: Date.now() });
 			if (stack.length > MAX_STASH) stack.shift();
 		}
+		persist();
 		ctx.ui.setEditorText(picked.text);
 		triggerRender();
 	}
@@ -250,8 +305,12 @@ export default function promptStashExtension(pi: ExtensionAPI) {
 			return;
 		}
 		pickerOpen = true;
+		let pickedStackIdx: number | undefined;
 		try {
-			await ctx.ui.custom<void>((tui, theme, _kb, done) => {
+			// NOTE: Pi's ctx.ui.custom() snapshots the editor text before opening and
+			// restores that snapshot when done() closes the dialog. So we must return
+			// the selected index from custom() and call restoreAt() AFTER it resolves.
+			pickedStackIdx = await ctx.ui.custom<number | undefined>((tui, theme, _kb, done) => {
 				let selected = 0; // index into newest-first list
 				let cachedLines: string[] | undefined;
 
@@ -294,16 +353,15 @@ export default function promptStashExtension(pi: ExtensionAPI) {
 						refresh();
 						return;
 					}
-					if (matchesKey(data, Key.enter) || data === " ") {
-						const idx = toStackIdx(selected);
-						restoreAt(ctx, idx);
-						done(undefined);
+					if (matchesKey(data, Key.enter) || data === "\r" || data === "\n" || data === " ") {
+						done(toStackIdx(selected));
 						return;
 					}
 					// Delete selected entry (d / x / Backspace / Delete)
 					if (data === "d" || data === "x" || matchesKey(data, Key.backspace) || matchesKey(data, Key.delete)) {
 						const idx = toStackIdx(selected);
 						stack.splice(idx, 1);
+						persist();
 						clampSelected();
 						triggerRender();
 						if (stack.length === 0) {
@@ -316,6 +374,7 @@ export default function promptStashExtension(pi: ExtensionAPI) {
 					// Clear all (C)
 					if (data === "C") {
 						stack.length = 0;
+						persist();
 						triggerRender();
 						done(undefined);
 						return;
@@ -324,8 +383,7 @@ export default function promptStashExtension(pi: ExtensionAPI) {
 					if (data >= "1" && data <= "9") {
 						const num = Number(data) - 1;
 						if (num < stack.length) {
-							restoreAt(ctx, toStackIdx(num));
-							done(undefined);
+							done(toStackIdx(num));
 							return;
 						}
 					}
@@ -409,6 +467,11 @@ export default function promptStashExtension(pi: ExtensionAPI) {
 			});
 		} finally {
 			pickerOpen = false;
+		}
+
+		if (pickedStackIdx !== undefined) {
+			restoreAt(ctx, pickedStackIdx);
+		} else {
 			triggerRender();
 		}
 	}
@@ -429,12 +492,16 @@ export default function promptStashExtension(pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", (_event, ctx) => {
+		currentSessionId = ctx.sessionManager.getSessionId();
+		stack = loadSessionStash(currentSessionId);
 		if (ctx.hasUI) ctx.ui.setWidget("prompt-stash", undefined);
 		bindCtrlC(ctx);
 		mountEditor(ctx);
+		triggerRender();
 	});
 
 	pi.on("session_shutdown", () => {
+		persist();
 		unsubInput?.();
 		unsubInput = undefined;
 		syncSpinner(false);
@@ -474,6 +541,7 @@ export default function promptStashExtension(pi: ExtensionAPI) {
 			}
 			if (sub === "clear") {
 				stack.length = 0;
+				persist();
 				triggerRender();
 				ctx.ui.notify("Prompt stash cleared", "info");
 				return;

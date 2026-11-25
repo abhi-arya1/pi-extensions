@@ -4,7 +4,7 @@ import type {
 	ToolRenderer,
 	ToolResultRendererContext,
 } from "@earendil-works/pi-coding-agent";
-import { Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Box, Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
 
 type NestedCall = {
 	name: string;
@@ -127,14 +127,62 @@ function formatNestedCall(call: NestedCall, theme: any, live: boolean): string {
 	return line;
 }
 
+function expandedBgFn(theme: any, isError: boolean, isPending: boolean): (text: string) => string {
+	const color = isPending ? "toolPendingBg" : isError ? "toolErrorBg" : "toolSuccessBg";
+	return (text: string) => theme.bg(color, text);
+}
+
+function wrapExpanded(child: any, theme: any, isError: boolean, isPending: boolean): Box {
+	const box = new Box(1, 0, expandedBgFn(theme, isError, isPending));
+	box.addChild(child);
+	return box;
+}
+
+function renderExpandedFallbackCall(toolName: string, args: any, theme: any, context: any, fallback?: ToolRenderer): Box {
+	const isPending = Boolean(context.isPartial || !context.argsComplete);
+	if (fallback?.renderCall) {
+		const inner = fallback.renderCall(args, theme, { ...context, lastComponent: undefined });
+		return wrapExpanded(inner, theme, Boolean(context.isError), isPending);
+	}
+	const argSummary = summarizeArgs(toolName, args, 200);
+	const header = new Text(
+		`${theme.fg("accent", "▾")} ${theme.fg("toolTitle", theme.bold(toolName))}${argSummary ? ` ${theme.fg("muted", argSummary)}` : ""}`,
+		0,
+		0,
+	);
+	return wrapExpanded(header, theme, Boolean(context.isError), isPending);
+}
+
+function renderExpandedFallbackResult(
+	result: any,
+	options: ToolRenderResultOptions,
+	theme: any,
+	context: ToolResultRendererContext,
+	fallback?: ToolRenderer,
+): Box {
+	const isPending = Boolean(options.isPartial);
+	if (fallback?.renderResult) {
+		const inner = fallback.renderResult(result, options, theme, { ...context, lastComponent: undefined });
+		return wrapExpanded(inner, theme, Boolean(context.isError), isPending);
+	}
+	const output = extractText(result);
+	const body = output
+		? theme.fg(context.isError ? "error" : "toolOutput", output)
+		: theme.fg("dim", "(no output)");
+	return wrapExpanded(new Text(body, 0, 0), theme, Boolean(context.isError), isPending);
+}
+
 function buildCodemodeRenderer(fallback: ToolRenderer | undefined): ToolRenderer {
 	return {
 		renderShell: "self",
 		renderCall(args: any, theme: any, context: any) {
-			if (context.expanded && fallback?.renderCall) {
-				return fallback.renderCall(args, theme, context);
+			if (context.expanded) {
+				return renderExpandedFallbackCall("codemode", args, theme, context, fallback);
 			}
-			const component = (context.lastComponent as Container | undefined) ?? new Container();
+			const component =
+				context.lastComponent instanceof Container && !(context.lastComponent instanceof Box)
+					? context.lastComponent
+					: new Container();
 			component.clear();
 
 			// Never dump raw JS code in collapsed mode — only show a tiny status while streaming args
@@ -160,10 +208,13 @@ function buildCodemodeRenderer(fallback: ToolRenderer | undefined): ToolRenderer
 		},
 
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any, context: ToolResultRendererContext) {
-			if (options.expanded && fallback?.renderResult) {
-				return fallback.renderResult(result, options, theme, context);
+			if (options.expanded) {
+				return renderExpandedFallbackResult(result, options, theme, context, fallback);
 			}
-			const component = (context.lastComponent as Container | undefined) ?? new Container();
+			const component =
+				context.lastComponent instanceof Container && !(context.lastComponent instanceof Box)
+					? context.lastComponent
+					: new Container();
 			component.clear();
 
 			const calls: NestedCall[] = Array.isArray(result?.details?.calls) ? result.details.calls : [];
@@ -214,10 +265,13 @@ function buildAskQuestionsRenderer(fallback: ToolRenderer | undefined): ToolRend
 	return {
 		renderShell: "self",
 		renderCall(args: any, theme: any, context: any) {
-			if (context.expanded && fallback?.renderCall) {
-				return fallback.renderCall(args, theme, context);
+			if (context.expanded) {
+				return renderExpandedFallbackCall("ask_questions", args, theme, context, fallback);
 			}
-			const component = (context.lastComponent as Container | undefined) ?? new Container();
+			const component =
+				context.lastComponent instanceof Container && !(context.lastComponent instanceof Box)
+					? context.lastComponent
+					: new Container();
 			component.clear();
 			const isRunning = context.isPartial || !context.argsComplete;
 			if (!isRunning) return component;
@@ -232,10 +286,13 @@ function buildAskQuestionsRenderer(fallback: ToolRenderer | undefined): ToolRend
 			return component;
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any, context: ToolResultRendererContext) {
-			if (options.expanded && fallback?.renderResult) {
-				return fallback.renderResult(result, options, theme, context);
+			if (options.expanded) {
+				return renderExpandedFallbackResult(result, options, theme, context, fallback);
 			}
-			const component = (context.lastComponent as Container | undefined) ?? new Container();
+			const component =
+				context.lastComponent instanceof Container && !(context.lastComponent instanceof Box)
+					? context.lastComponent
+					: new Container();
 			component.clear();
 			const details = result?.details as
 				| {
@@ -268,10 +325,13 @@ function buildGenericCompactRenderer(toolName: string, fallback: ToolRenderer | 
 	return {
 		renderShell: "self",
 		renderCall(args: any, theme: any, context: any) {
-			if (context.expanded && fallback?.renderCall) {
-				return fallback.renderCall(args, theme, context);
+			if (context.expanded) {
+				return renderExpandedFallbackCall(toolName, args, theme, context, fallback);
 			}
-			const component = (context.lastComponent as Container | undefined) ?? new Container();
+			const component =
+				context.lastComponent instanceof Container && !(context.lastComponent instanceof Box)
+					? context.lastComponent
+					: new Container();
 			component.clear();
 			const isRunning = context.isPartial || !context.argsComplete;
 			if (!isRunning) return component;
@@ -286,10 +346,13 @@ function buildGenericCompactRenderer(toolName: string, fallback: ToolRenderer | 
 			return component;
 		},
 		renderResult(result: any, options: ToolRenderResultOptions, theme: any, context: ToolResultRendererContext) {
-			if (options.expanded && fallback?.renderResult) {
-				return fallback.renderResult(result, options, theme, context);
+			if (options.expanded) {
+				return renderExpandedFallbackResult(result, options, theme, context, fallback);
 			}
-			const component = (context.lastComponent as Container | undefined) ?? new Container();
+			const component =
+				context.lastComponent instanceof Container && !(context.lastComponent instanceof Box)
+					? context.lastComponent
+					: new Container();
 			component.clear();
 
 			const output = extractText(result);
