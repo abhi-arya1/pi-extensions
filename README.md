@@ -7,14 +7,14 @@ Portable Pi coding agent environment — custom extensions, theme, config templa
 ```text
 .
 ├── extensions/
-│   ├── compact-ui.ts        # Compact tool rendering (codemode/generic), truncated thought previews, steering guidelines
+│   ├── compact-ui.ts        # Compact tool rendering (bg-highlighted when expanded), thought previews, /clear alias for /new
 │   ├── optchat-session.ts   # Per-session OptChat profiles, right-aligned compact footer stats, native compaction events
-│   ├── prompt-stash.ts      # Native prompt editor: '>' idle caret, inline spinner, Ctrl+C stash / Alt+S pop badge, compaction border
+│   ├── prompt-stash.ts      # Native prompt editor: '>' idle caret (hidden on '!'), inline spinner, persisted interactive stash picker ('≡' badge), compaction border
 │   └── ask-questions.ts     # Restyled interactive structured-question TUI (forked from pi-questions)
 ├── themes/
 │   └── clean-dark.json      # Ghostty/Rex-inspired dark theme with charcoal surfaces and crisp primaries
 ├── config/
-│   ├── APPEND_SYSTEM.md     # Global system prompt addendum (Executor-first, Executor Skills, gh CLI for GitHub)
+│   ├── APPEND_SYSTEM.md     # Global system prompt addendum (Executor-first, Executor Skills, gh CLI for GitHub, steering priority)
 │   ├── settings.json        # Portable Pi settings (packages, theme, codemode: on, steering: all, compaction)
 │   ├── mcp.json             # Global MCP server definitions (Executor)
 │   └── models.json          # Local model provider definitions (llama-cpp)
