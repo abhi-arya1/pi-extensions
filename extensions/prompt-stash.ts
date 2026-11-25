@@ -212,12 +212,24 @@ export default function promptStashExtension(pi: ExtensionAPI) {
 				}
 
 				override render(width: number): string[] {
+					const uiTheme = ctx.ui.theme;
+					const hasLoadingSpinner = Boolean(this.activeIndicator?.renderSpinnerInBorder);
+					// When idle and typing a shell command (`!` / `!!`), omit the `>` gutter so the prompt is just `!`
+					const isBashPrompt = !hasLoadingSpinner && this.getText().trimStart().startsWith("!");
+
+					if (isBashPrompt) {
+						const lines = super.render(width);
+						if (lines.length < 3) return lines;
+						const scrollOff = (this as any).scrollOffset ?? 0;
+						lines[0] = this.renderTopBorder(width, scrollOff);
+						return lines;
+					}
+
 					// Reserve 2 columns on the left of the text area for the native prompt glyph (">" or spinner)
 					const innerWidth = Math.max(1, width - 2);
 					const lines = super.render(innerWidth);
 					if (lines.length < 3) return lines;
 
-					const uiTheme = ctx.ui.theme;
 					const visibleCount = (this as any).renderedVisibleLineCount ?? 1;
 					const scrollOff = (this as any).scrollOffset ?? 0;
 					const totalLines = lines.length;
@@ -228,8 +240,8 @@ export default function promptStashExtension(pi: ExtensionAPI) {
 
 					// Choose the prompt gutter glyph: live spinner when working/loading, clean ">" when idle
 					let glyph: string;
-					if (this.activeIndicator?.renderSpinnerInBorder) {
-						const rawSpinner = this.activeIndicator.renderSpinnerInBorder(1);
+					if (hasLoadingSpinner) {
+						const rawSpinner = this.activeIndicator!.renderSpinnerInBorder!(1);
 						glyph = visibleWidth(rawSpinner) > 0 ? rawSpinner : uiTheme.fg("accent", "⠋");
 					} else {
 						glyph = uiTheme.fg("accent", ">");
