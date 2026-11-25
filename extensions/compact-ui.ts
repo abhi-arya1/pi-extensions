@@ -113,18 +113,152 @@ function extractText(result: any): string {
 	return parts.join("\n").trim();
 }
 
-function formatNestedCall(call: NestedCall, theme: any, live: boolean): string {
+function formatExecutorCall(
+	call: NestedCall,
+	theme: any,
+	live: boolean,
+): { label: string; detail: string } | null {
+	if (!call.name.startsWith("mcp__executor__")) return null;
+	const op = call.name.slice("mcp__executor__".length);
+	const raw = (call.args ?? "").trim();
+
+	// Unescape a JSON string snippet (possibly truncated)
+	const unescapeJson = (s: string) =>
+		s.replace(/\\n/g, "\n").replace(/\\t/g, " ").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+
+	if (op === "execute") {
+		const codeMatch = raw.match(/"code"\s*:\s*"((?:[^"\\]|\\.)*)/);
+		const code = codeMatch ? unescapeJson(codeMatch[1]) : raw;
+
+		// Extract all `tools.<namespace>.<method>` calls in order (deduped)
+		const toolPaths: string[] = [];
+		for (const m of code.matchAll(/\btools\.([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)\s*\(/g)) {
+			if (!toolPaths.includes(m[1])) toolPaths.push(m[1]);
+		}
+
+		// Extract helpful scalar params (action, query, artifactId, session_id, status, path, title, app)
+		const hints: string[] = [];
+		const addHint = (key: string, re: RegExp) => {
+			const m = code.match(re);
+			if (m && m[1]) {
+				const v = m[1].trim();
+				if (v && !hints.includes(v)) hints.push(key ? `${key}=${v}` : v);
+			}
+		};
+		addHint("", /\baction\s*:\s*["'`]([^"'`]{1,32})["'`]/);
+		addHint("", /\bquery\s*:\s*["'`]([^"'`]{1,48})["'`]/);
+		addHint("", /\bapp\s*:\s*["'`]([^"'`]{1,32})["'`]/);
+		addHint("", /\btitle\s*:\s*["'`]([^"'`]{1,40})["'`]/);
+
+		if (toolPaths.length > 0) {
+			const primary = toolPaths.length === 1 ? toolPaths[0] : `${toolPaths[0]} +${toolPaths.length - 1}`;
+			return {
+				label: `executor ${primary}`,
+				detail: oneLine(hints.join(" · "), live ? 72 : 64),
+			};
+		}
+		return {
+			label: "executor execute",
+			detail: oneLine(code, live ? 84 : 72),
+		};
+	}
+
+	if (op === "search") {
+		const q = raw.match(/"query"\s*:\s*"((?:[^"\\]|\\.)*)/);
+		return {
+			label: "executor search",
+			detail: q ? oneLine(unescapeJson(q[1]), live ? 84 : 72) : formatNestedArgs(call.name, call.args, 72),
+		};
+	}
+
+	if (op === "describe") {
+		const paths: string[] = [];
+		for (const m of raw.matchAll(/"([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)"/g)) {
+			paths.push(m[1]);
+		}
+		return {
+			label: "executor describe",
+			detail: paths.length > 0 ? oneLine(paths.join(", "), live ? 84 : 72) : formatNestedArgs(call.name, call.args, 72),
+		};
+	}
+
+	if (op === "skills") {
+		const q = raw.match(/"(?:query|name|app)"\s*:\s*"((?:[^"\\]|\\.)*)/);
+		return {
+			label: "executor skills",
+			detail: q ? oneLine(unescapeJson(q[1]), 64) : "",
+		};
+	}
+
+	if (op === "call") {
+		const p = raw.match(/"path"\s*:\s*"((?:[^"\\]|\\.)*)/);
+		return {
+			label: p ? `executor ${unescapeJson(p[1])}` : "executor call",
+			detail: "",
+		};
+	}
+
+	return {
+		label: `executor ${op}`,
+		detail: formatNestedArgs(call.name, call.args, live ? 84 : 72),
+	};
+}
+
+function formatNestedCallLine(
+	call: NestedCall,
+	theme: any,
+	live: boolean,
+	repeatCount = 1,
+	totalDurationMs?: number,
+): string {
 	const icon = statusIcon(call.status, theme);
-	const name = theme.fg(call.status === "error" ? "error" : "toolTitle", call.name);
-	const cleanArgs = formatNestedArgs(call.name, call.args, live ? 96 : 84);
+	const exec = formatExecutorCall(call, theme, live);
+	const displayName = exec ? exec.label : call.name;
+	const cleanArgs = exec ? exec.detail : formatNestedArgs(call.name, call.args, live ? 96 : 84);
+
+	const name = theme.fg(call.status === "error" ? "error" : "toolTitle", displayName);
 	const argText = cleanArgs ? ` ${theme.fg("muted", cleanArgs)}` : "";
-	const dur = call.durationMs !== undefined ? ` ${theme.fg("dim", formatDuration(call.durationMs))}` : "";
+	const countBadge = repeatCount > 1 ? ` ${theme.fg("accent", `×${repeatCount}`)}` : "";
+	const durVal = totalDurationMs ?? call.durationMs;
+	const dur = durVal !== undefined ? ` ${theme.fg("dim", formatDuration(durVal))}` : "";
 	const cost = call.cost ? ` ${theme.fg("dim", formatCost(call.cost))}` : "";
-	let line = `  ${icon} ${name}${argText}${dur}${cost}`;
+	let line = `  ${icon} ${name}${argText}${countBadge}${dur}${cost}`;
 	if (call.status === "error" && call.error) {
 		line += `\n      ${theme.fg("error", oneLine(call.error, 120))}`;
 	}
 	return line;
+}
+
+function formatNestedCalls(calls: NestedCall[], theme: any, live: boolean): string[] {
+	const lines: string[] = [];
+	let i = 0;
+	while (i < calls.length) {
+		const cur = calls[i];
+		const exec = formatExecutorCall(cur, theme, live);
+		const key = `${cur.status}|${exec ? `${exec.label}|${exec.detail}` : `${cur.name}|${formatNestedArgs(cur.name, cur.args, live ? 96 : 84)}`}`;
+		let j = i + 1;
+		let totalDur = cur.durationMs ?? 0;
+		let hasDur = cur.durationMs !== undefined;
+		// Only collapse consecutive identical finished ok calls (never collapse running or error calls)
+		if (cur.status === "ok") {
+			while (j < calls.length) {
+				const next = calls[j];
+				if (next.status !== "ok") break;
+				const nextExec = formatExecutorCall(next, theme, live);
+				const nextKey = `${next.status}|${nextExec ? `${nextExec.label}|${nextExec.detail}` : `${next.name}|${formatNestedArgs(next.name, next.args, live ? 96 : 84)}`}`;
+				if (nextKey !== key) break;
+				if (next.durationMs !== undefined) {
+					totalDur += next.durationMs;
+					hasDur = true;
+				}
+				j++;
+			}
+		}
+		const count = j - i;
+		lines.push(formatNestedCallLine(cur, theme, live, count, count > 1 && hasDur ? totalDur : undefined));
+		i = j;
+	}
+	return lines;
 }
 
 function expandedBgFn(theme: any, isError: boolean, isPending: boolean): (text: string) => string {
@@ -226,14 +360,14 @@ function buildCodemodeRenderer(fallback: ToolRenderer | undefined): ToolRenderer
 
 			if (options.isPartial) {
 				if (calls.length > 0) {
-					const lines = calls.map((c) => formatNestedCall(c, theme, true));
+					const lines = formatNestedCalls(calls, theme, true);
 					component.addChild(new Text(lines.join("\n"), 0, 0));
 				}
 				return component;
 			}
 
 			if (calls.length > 0) {
-				const lines = calls.map((c) => formatNestedCall(c, theme, false));
+				const lines = formatNestedCalls(calls, theme, false);
 				if (context.isError && output) {
 					const errPreview = outLines
 						.slice(-3)
