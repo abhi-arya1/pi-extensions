@@ -38,11 +38,13 @@ function oneLine(s: string, max = 96): string {
 	return `${flat.slice(0, max - 1)}…`;
 }
 
-function statusIcon(status: NestedCall["status"], theme: any): string {
+function statusIcon(status: NestedCall["status"], theme: any, toolName?: string): string {
 	switch (status) {
 		case "running":
 			return theme.fg("warning", "◐");
 		case "ok":
+			if (toolName === "zoom") return theme.fg("accent", "⌖");
+			if (toolName === "date") return theme.fg("accent", "◷");
 			return theme.fg("success", "✓");
 		case "error":
 			return theme.fg("error", "✗");
@@ -53,6 +55,14 @@ function statusIcon(status: NestedCall["status"], theme: any): string {
 
 function summarizeArgs(toolName: string, args: any, max = 88): string {
 	if (!args || typeof args !== "object") return "";
+	if (toolName === "zoom" && args.id !== undefined) {
+		const id = String(args.id);
+		const n = typeof args.n === "number" ? `+${args.n}` : "";
+		return `${id}${n}`;
+	}
+	if (toolName === "date" && args.id !== undefined) {
+		return `#${args.id}`;
+	}
 	if (typeof args.path === "string") {
 		const p = shortHome(args.path);
 		if (typeof args.offset === "number") {
@@ -114,7 +124,7 @@ function extractText(result: any): string {
 }
 
 function formatNestedCall(call: NestedCall, theme: any, live: boolean): string {
-	const icon = statusIcon(call.status, theme);
+	const icon = statusIcon(call.status, theme, call.name);
 	const name = theme.fg(call.status === "error" ? "error" : "toolTitle", call.name);
 	const cleanArgs = formatNestedArgs(call.name, call.args, live ? 96 : 84);
 	const argText = cleanArgs ? ` ${theme.fg("muted", cleanArgs)}` : "";
@@ -369,11 +379,15 @@ function buildGenericCompactRenderer(toolName: string, fallback: ToolRenderer | 
 				return component;
 			}
 
-			const icon = context.isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
+			const icon = context.isError
+				? theme.fg("error", "✗")
+				: statusIcon("ok", theme, toolName);
 			const argSummary = summarizeArgs(toolName, context.args);
 			let meta = "";
 			if (context.isError && output) {
 				meta = ` ${theme.fg("error", oneLine(output, 100))}`;
+			} else if (toolName === "date" && outLines.length === 1) {
+				meta = ` ${theme.fg("dim", oneLine(outLines[0], 64))}`;
 			} else if (outLines.length === 1 && outLines[0].length <= 64 && !argSummary) {
 				meta = ` ${theme.fg("muted", outLines[0])}`;
 			}
