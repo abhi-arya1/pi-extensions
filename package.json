@@ -13,7 +13,8 @@
       "./extensions/optchat-session.ts",
       "./extensions/prompt-stash.ts",
       "./extensions/ask-questions.ts",
-      "./extensions/rex-resume.ts"
+      "./extensions/rex-resume.ts",
+      "./extensions/optchat-viewer.ts"
     ],
     "themes": [
       "./themes/clean-dark.json"
