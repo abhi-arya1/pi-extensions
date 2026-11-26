@@ -589,9 +589,9 @@ class OptchatViewerOverlay implements Component {
 
   render(width: number): string[] {
     const theme = this.theme;
-    const innerW = Math.max(36, width - 4); // "│ " + content + " │"
+    const innerW = Math.max(36, width - 4); // "┃ " + content + " ┃"
     const termRows = process.stdout.rows || 36;
-    const maxBodyLines = Math.max(10, Math.min(22, Math.floor(termRows * 0.56) - 4));
+    const maxBodyLines = Math.max(12, Math.min(30, Math.floor(termRows * 0.78) - 4));
 
     this.detailChildHits = [];
     this.breadcrumbHits = [];
@@ -709,7 +709,7 @@ class OptchatViewerOverlay implements Component {
         this.timelineColToRow.push(rowPtr);
         const st = styleForLevel(this.rows[rowPtr].part.l);
         const isSel = rowPtr === this.selectedIdx;
-        barStr += isSel ? `${st.fg}${BOLD}█${RESET}` : `${st.fg}━${RESET}`;
+        barStr += isSel ? `${st.fg}${BOLD}█${RESET}` : `${st.fg}▆${RESET}`;
       }
     } else {
       barStr = theme.fg("dim", "─".repeat(barW));
@@ -932,11 +932,11 @@ export default function (pi: ExtensionAPI) {
         {
           overlay: true,
           overlayOptions: {
-            anchor: "bottom-center",
-            width: "96%",
+            anchor: "center",
+            width: "88%",
             minWidth: 64,
-            maxHeight: "60%",
-            margin: { left: 1, right: 1, bottom: 2, top: 2 },
+            maxHeight: "84%",
+            margin: 1,
           },
         },
       );
