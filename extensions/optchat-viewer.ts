@@ -591,7 +591,7 @@ class OptchatViewerOverlay implements Component {
     const theme = this.theme;
     const innerW = Math.max(36, width - 4); // "│ " + content + " │"
     const termRows = process.stdout.rows || 36;
-    const maxBodyLines = Math.max(10, Math.min(28, Math.floor(termRows * 0.78) - 5));
+    const maxBodyLines = Math.max(10, Math.min(22, Math.floor(termRows * 0.56) - 4));
 
     this.detailChildHits = [];
     this.breadcrumbHits = [];
@@ -599,22 +599,30 @@ class OptchatViewerOverlay implements Component {
     this.timelineColToRow = [];
     this.closeBtnHit = null;
 
-    const border = (s: string) => theme.fg("borderMuted", s);
-    const frame = (content: string) => border("│ ") + padRight(content, innerW) + border(" │");
-    const divider = () => border("├" + "─".repeat(innerW + 2) + "┤");
+    const PANEL_BG = "\x1b[48;2;20;21;26m";
+    const border = (s: string) => theme.fg("border", s);
+    const subtle = (s: string) => theme.fg("borderMuted", s);
+    // Re-apply panel background after any inner ANSI reset so the drawer stays solid end-to-end.
+    const withBg = (s: string) => PANEL_BG + s.replace(/\x1b\[0m/g, `\x1b[0m${PANEL_BG}`);
+    const frame = (content: string) =>
+      `${withBg(`${border("┃")} ${padRight(content, innerW)} ${border("┃")}`)}${RESET}`;
+    const divider = () =>
+      `${withBg(`${border("┠")}${subtle("─".repeat(innerW + 2))}${border("┨")}`)}${RESET}`;
 
     const lines: string[] = [];
 
-    // Top border: title left, [×] close right
+    // Top border: heavy top edge with title left, [×] close right
     const title = " OptChat Timeline ";
     const closeTag = " × ";
     const fillW = Math.max(1, innerW + 2 - visibleWidth(title) - visibleWidth(closeTag));
     lines.push(
-      border("╭") +
-        theme.fg("text", theme.bold(title)) +
-        border("─".repeat(fillW)) +
-        theme.fg("muted", closeTag) +
-        border("╮"),
+      `${withBg(
+        border("┏━") +
+          theme.fg("text", theme.bold(title)) +
+          border("━".repeat(Math.max(0, fillW - 1))) +
+          theme.fg("muted", closeTag) +
+          border("┓"),
+      )}${RESET}`,
     );
     this.closeBtnHit = { y: 0, xStart: Math.max(0, width - closeTag.length - 1), xEnd: width - 1 };
 
@@ -633,9 +641,11 @@ class OptchatViewerOverlay implements Component {
     const leftPad = Math.max(0, Math.floor((innerW + 2 - visibleWidth(truncHint)) / 2));
     const rightPad = Math.max(0, innerW + 2 - visibleWidth(truncHint) - leftPad);
     lines.push(
-      border("╰" + "─".repeat(leftPad)) +
-        theme.fg("dim", truncHint) +
-        border("─".repeat(rightPad) + "╯"),
+      `${withBg(
+        border("┗" + "━".repeat(leftPad)) +
+          theme.fg("dim", truncHint) +
+          border("━".repeat(rightPad) + "┛"),
+      )}${RESET}`,
     );
 
     return lines;
@@ -922,11 +932,11 @@ export default function (pi: ExtensionAPI) {
         {
           overlay: true,
           overlayOptions: {
-            anchor: "center",
-            width: "88%",
+            anchor: "bottom-center",
+            width: "96%",
             minWidth: 64,
-            maxHeight: "84%",
-            margin: 1,
+            maxHeight: "60%",
+            margin: { left: 1, right: 1, bottom: 2, top: 2 },
           },
         },
       );
