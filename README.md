@@ -2,6 +2,8 @@
 
 Portable Pi coding agent environment — custom extensions, theme, config templates, and bootstrap script so any machine can run the exact same Pi setup and iterate on it directly from git.
 
+![Pi demo screenshot](assets/demo.png)
+
 ## What's inside
 
 ```text
