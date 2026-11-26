@@ -4,7 +4,39 @@ import type {
 	ToolRenderer,
 	ToolResultRendererContext,
 } from "@earendil-works/pi-coding-agent";
-import { Box, Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Box, type Component, Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
+
+/**
+ * Single-line-per-entry text component that truncates each line to the actual
+ * rendered width (instead of hard-wrapping onto multiple lines on narrow screens).
+ */
+class SingleLineList implements Component {
+	private lines: string[];
+	private ellipsis: string;
+	private cache?: { width: number; rendered: string[] };
+
+	constructor(lines: string[], ellipsis = "…") {
+		this.lines = lines;
+		this.ellipsis = ellipsis;
+	}
+
+	setLines(lines: string[]): void {
+		this.lines = lines;
+		this.cache = undefined;
+	}
+
+	invalidate(): void {
+		this.cache = undefined;
+	}
+
+	render(width: number): string[] {
+		if (this.cache && this.cache.width === width) return this.cache.rendered;
+		const w = Math.max(1, width);
+		const rendered = this.lines.map((line) => truncateToWidth(line, w, this.ellipsis));
+		this.cache = { width, rendered };
+		return rendered;
+	}
+}
 
 type NestedCall = {
 	name: string;
@@ -323,18 +355,16 @@ function buildCodemodeRenderer(fallback: ToolRenderer | undefined): ToolRenderer
 			// before nested tool calls appear. Ctrl+O / click still expands the full script.
 			if (!context.argsComplete) {
 				component.addChild(
-					new Text(
-						`  ${theme.fg("warning", "◐")} ${theme.fg("muted", "preparing tools…")}`,
-						0,
-						0,
+					new SingleLineList(
+						[`  ${theme.fg("warning", "◐")} ${theme.fg("muted", "preparing tools…")}`],
+						theme.fg("dim", "…"),
 					),
 				);
 			} else if (context.isPartial && !context.state?.hasNestedCalls) {
 				component.addChild(
-					new Text(
-						`  ${theme.fg("warning", "◐")} ${theme.fg("muted", "running…")}`,
-						0,
-						0,
+					new SingleLineList(
+						[`  ${theme.fg("warning", "◐")} ${theme.fg("muted", "running…")}`],
+						theme.fg("dim", "…"),
 					),
 				);
 			}
@@ -357,25 +387,24 @@ function buildCodemodeRenderer(fallback: ToolRenderer | undefined): ToolRenderer
 			}
 			const output = options.isPartial ? "" : extractText(result);
 			const outLines = output ? output.split("\n") : [];
+			const ell = theme.fg("dim", "…");
 
 			if (options.isPartial) {
 				if (calls.length > 0) {
-					const lines = formatNestedCalls(calls, theme, true);
-					component.addChild(new Text(lines.join("\n"), 0, 0));
+					const lines = formatNestedCalls(calls, theme, true).flatMap((l) => l.split("\n"));
+					component.addChild(new SingleLineList(lines, ell));
 				}
 				return component;
 			}
 
 			if (calls.length > 0) {
-				const lines = formatNestedCalls(calls, theme, false);
+				const lines = formatNestedCalls(calls, theme, false).flatMap((l) => l.split("\n"));
 				if (context.isError && output) {
-					const errPreview = outLines
-						.slice(-3)
-						.map((l) => `    ${theme.fg("error", oneLine(l, 120))}`)
-						.join("\n");
-					lines.push(errPreview);
+					for (const l of outLines.slice(-3)) {
+						lines.push(`    ${theme.fg("error", oneLine(l, 120))}`);
+					}
 				}
-				component.addChild(new Text(lines.join("\n"), 0, 0));
+				component.addChild(new SingleLineList(lines, ell));
 				return component;
 			}
 
@@ -388,7 +417,7 @@ function buildCodemodeRenderer(fallback: ToolRenderer | undefined): ToolRenderer
 						? theme.fg("muted", oneLine(outLines[0], 96))
 						: theme.fg("dim", `${outLines.length} lines`);
 			component.addChild(
-				new Text(`  ${icon} ${theme.fg("toolTitle", "codemode")} ${summary}`, 0, 0),
+				new SingleLineList([`  ${icon} ${theme.fg("toolTitle", "codemode")} ${summary}`], ell),
 			);
 			return component;
 		},
@@ -411,10 +440,9 @@ function buildAskQuestionsRenderer(fallback: ToolRenderer | undefined): ToolRend
 			if (!isRunning) return component;
 			const summary = summarizeArgs("ask_questions", args);
 			component.addChild(
-				new Text(
-					`  ${theme.fg("accent", "?")} ${theme.fg("toolTitle", theme.bold("questions"))} ${theme.fg("muted", summary)}`,
-					0,
-					0,
+				new SingleLineList(
+					[`  ${theme.fg("accent", "?")} ${theme.fg("toolTitle", theme.bold("questions"))} ${theme.fg("muted", summary)}`],
+					theme.fg("dim", "…"),
 				),
 			);
 			return component;
@@ -435,12 +463,17 @@ function buildAskQuestionsRenderer(fallback: ToolRenderer | undefined): ToolRend
 				  }
 				| undefined;
 			if (!details) return component;
+			const ell = theme.fg("dim", "…");
 			if (details.status === "cancelled") {
-				component.addChild(new Text(`  ${theme.fg("warning", "⊘")} ${theme.fg("muted", "questions cancelled")}`, 0, 0));
+				component.addChild(
+					new SingleLineList([`  ${theme.fg("warning", "⊘")} ${theme.fg("muted", "questions cancelled")}`], ell),
+				);
 				return component;
 			}
 			if (details.status === "unavailable") {
-				component.addChild(new Text(`  ${theme.fg("warning", "!")} ${theme.fg("muted", "questions UI unavailable")}`, 0, 0));
+				component.addChild(
+					new SingleLineList([`  ${theme.fg("warning", "!")} ${theme.fg("muted", "questions UI unavailable")}`], ell),
+				);
 				return component;
 			}
 			const answers = details.answers ?? [];
@@ -449,7 +482,7 @@ function buildAskQuestionsRenderer(fallback: ToolRenderer | undefined): ToolRend
 				(a) =>
 					`  ${theme.fg("success", "✓")} ${theme.fg("muted", `${a.header}:`)} ${theme.fg("text", a.answer)}`,
 			);
-			component.addChild(new Text(lines.join("\n"), 0, 0));
+			component.addChild(new SingleLineList(lines, ell));
 			return component;
 		},
 	};
@@ -471,10 +504,11 @@ function buildGenericCompactRenderer(toolName: string, fallback: ToolRenderer | 
 			if (!isRunning) return component;
 			const argSummary = summarizeArgs(toolName, args);
 			component.addChild(
-				new Text(
-					`  ${theme.fg("warning", "◐")} ${theme.fg("toolTitle", toolName)}${argSummary ? ` ${theme.fg("muted", argSummary)}` : ""}`,
-					0,
-					0,
+				new SingleLineList(
+					[
+						`  ${theme.fg("warning", "◐")} ${theme.fg("toolTitle", toolName)}${argSummary ? ` ${theme.fg("muted", argSummary)}` : ""}`,
+					],
+					theme.fg("dim", "…"),
 				),
 			);
 			return component;
@@ -491,14 +525,14 @@ function buildGenericCompactRenderer(toolName: string, fallback: ToolRenderer | 
 
 			const output = extractText(result);
 			const outLines = output ? output.split("\n") : [];
+			const ell = theme.fg("dim", "…");
 
 			if (options.isPartial) {
 				if (outLines.length > 0) {
 					const tail = outLines
 						.slice(-3)
-						.map((l) => `    ${theme.fg("dim", truncateToWidth(l, 110))}`)
-						.join("\n");
-					component.addChild(new Text(tail, 0, 0));
+						.map((l) => `    ${theme.fg("dim", oneLine(l, 200))}`);
+					component.addChild(new SingleLineList(tail, ell));
 				}
 				return component;
 			}
@@ -512,10 +546,11 @@ function buildGenericCompactRenderer(toolName: string, fallback: ToolRenderer | 
 				meta = ` ${theme.fg("muted", outLines[0])}`;
 			}
 			component.addChild(
-				new Text(
-					`  ${icon} ${theme.fg(context.isError ? "error" : "toolTitle", toolName)}${argSummary ? ` ${theme.fg("muted", argSummary)}` : ""}${meta}`,
-					0,
-					0,
+				new SingleLineList(
+					[
+						`  ${icon} ${theme.fg(context.isError ? "error" : "toolTitle", toolName)}${argSummary ? ` ${theme.fg("muted", argSummary)}` : ""}${meta}`,
+					],
+					ell,
 				),
 			);
 			return component;
@@ -537,26 +572,27 @@ function trimWordEnd(s: string, max: number): string {
 	return sp > max * 0.7 ? head.slice(0, sp).trimEnd() : head.trimEnd();
 }
 
-function previewThinking(markdown: string, isStreaming: boolean): string {
+function previewThinking(markdown: string, isStreaming: boolean, availableWidth?: number): string {
 	const cleaned = markdown
 		.replace(/```[\s\S]*?```/g, "[code]")
 		.replace(/\s+/g, " ")
 		.trim();
 	if (!cleaned) return "";
+	const narrow = typeof availableWidth === "number" && availableWidth > 0 && availableWidth < 70;
 	if (isStreaming) {
-		// While streaming, show a generous live rolling tail
-		const max = 420;
+		// While streaming, show a rolling tail scaled to screen width (~2.5-3 lines on mobile)
+		const max = narrow ? Math.max(90, Math.min(180, Math.floor(availableWidth * 2.8))) : 420;
 		if (cleaned.length <= max) return `· ${cleaned}`;
 		return `· …${trimWordStart(cleaned, max)}`;
 	}
-	// Once finished, keep a readable ~3-line preview broken cleanly at word boundaries
-	const max = 320;
+	// Once finished, keep a readable ~2-3 line preview broken cleanly at word boundaries
+	const max = narrow ? Math.max(80, Math.min(140, Math.floor(availableWidth * 2.2))) : 320;
 	if (cleaned.length <= max) return `· ${cleaned}`;
 	return `· ${trimWordEnd(cleaned, max)}…`;
 }
 
 export default function compactUiExtension(pi: ExtensionAPI) {
-	// 1. Truncated preview of all thoughts (live tail while streaming, compact 1-line summary when done).
+	// 1. Truncated preview of all thoughts (live tail while streaming, compact summary when done).
 	// Ctrl+T still toggles full hide/show if desired.
 	const applyThinkingLabel = (ctx: { hasUI: boolean; ui: { setHiddenThinkingLabel: (label?: string) => void } }) => {
 		if (!ctx.hasUI) return;
@@ -566,7 +602,7 @@ export default function compactUiExtension(pi: ExtensionAPI) {
 
 	pi.registerMarkdownTransformer((markdown, info) => {
 		if (info.messageType === "assistant-thinking") {
-			return previewThinking(markdown, info.isStreaming);
+			return previewThinking(markdown, info.isStreaming, info.availableWidth);
 		}
 		if (info.messageType === "user") {
 			if (!markdown || markdown.startsWith("› ")) return markdown;
@@ -575,7 +611,7 @@ export default function compactUiExtension(pi: ExtensionAPI) {
 		return markdown;
 	});
 
-	// 2. Open while running, auto-close on completion for all tools (ctrl+o / click still expands).
+	// 2. Open while running, auto-close on completion for all tools (ctrl+o / click / /tools still expands).
 	pi.registerToolRenderer((toolName, next) => {
 		const fallback = next();
 		if (toolName === "codemode") return buildCodemodeRenderer(fallback);
@@ -591,6 +627,23 @@ export default function compactUiExtension(pi: ExtensionAPI) {
 			if (!res.cancelled && ctx.hasUI) {
 				ctx.ui.notify("New session started", "info");
 			}
+		},
+	});
+
+	// 4. /tools slash command alternative for Ctrl+O (toggle expanded tool outputs — mobile-friendly).
+	pi.registerCommand("tools", {
+		description: "Toggle expanded tool outputs (Ctrl+O alternative; optional: on|off)",
+		handler: async (args, ctx) => {
+			if (!ctx.hasUI) return;
+			const arg = args.trim().toLowerCase();
+			const next =
+				arg === "on" || arg === "expand" || arg === "show"
+					? true
+					: arg === "off" || arg === "collapse" || arg === "hide"
+						? false
+						: !ctx.ui.getToolsExpanded();
+			ctx.ui.setToolsExpanded(next);
+			ctx.ui.notify(`Tool outputs: ${next ? "expanded" : "collapsed"}`, "info");
 		},
 	});
 }

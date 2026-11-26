@@ -250,13 +250,19 @@ export function formatOptchatFooter(s: OptchatStats): string {
   return parts.join(" · ");
 }
 
-function formatOptchatFooterStyled(s: OptchatStats, theme: Theme): string {
+function formatOptchatFooterStyled(s: OptchatStats, theme: Theme, narrow = false): string {
   const kb = (s.viewBytes / 1000).toFixed(s.viewBytes >= 10_000 ? 0 : 1);
   const budgetKb = Math.round(s.viewBudget / 1000);
   const pct = Math.round(s.viewPercent);
   const sep = theme.fg("dim", " · ");
-
   const memColor = pct >= 90 ? "error" : pct >= 70 ? "warning" : "accent";
+
+  if (narrow) {
+    // Compact form for mobile terminals (~40–55 cols): `mem 62/128KB (48%)` or `mem 48% · 2c`
+    const base = theme.fg("muted", "mem ") + theme.fg(memColor, `${kb}/${budgetKb}KB`) + theme.fg("dim", ` (${pct}%)`);
+    return s.pending > 0 ? `${base}${sep}${theme.fg("warning", `${s.pending}c`)}` : base;
+  }
+
   const parts: string[] = [
     theme.fg("muted", "mem ") + theme.fg(memColor, `${kb}/${budgetKb}KB`) + theme.fg("dim", ` (${pct}%)`),
     theme.fg("muted", `${s.messages}m`) + theme.fg("dim", "/") + theme.fg("muted", `${s.summaryNodes}n`),
@@ -269,6 +275,13 @@ function formatOptchatFooterStyled(s: OptchatStats, theme: Theme): string {
     parts.push(theme.fg("warning", `${s.pending} compacting`));
   }
   return parts.join(sep);
+}
+
+function formatOptchatFooterUltraCompact(s: OptchatStats, theme: Theme): string {
+  const pct = Math.round(s.viewPercent);
+  const memColor = pct >= 90 ? "error" : pct >= 70 ? "warning" : "accent";
+  const base = theme.fg("muted", "mem ") + theme.fg(memColor, `${pct}%`);
+  return s.pending > 0 ? `${base}${theme.fg("warning", ` ·${s.pending}`)}` : base;
 }
 
 function formatTokensCompact(count: number): string {
@@ -341,14 +354,21 @@ export default function optchatSession(pi: ExtensionAPI) {
         },
         invalidate() {},
         render(width: number): string[] {
-          const ellipsis = theme.fg("dim", "...");
+          const ellipsis = theme.fg("dim", "…");
+          const narrow = width < 72;
 
           // Row 1: left = pwd (branch) • session name | right = (provider) model • thinking
           let pwd = formatPwdShort(ctx.cwd);
           const branch = footerData.getGitBranch();
-          if (branch) pwd = `${pwd} (${branch})`;
           const sessionName = pi.getSessionName()?.trim();
-          if (sessionName) pwd = `${pwd} • ${sessionName}`;
+          if (narrow) {
+            // On narrow mobile screens, prefer basename + session name (drop long path/branch if tight)
+            const shortDir = pwd === "~" ? "~" : path.basename(ctx.cwd) || pwd;
+            pwd = sessionName ? `${shortDir} • ${sessionName}` : branch ? `${shortDir} (${branch})` : shortDir;
+          } else {
+            if (branch) pwd = `${pwd} (${branch})`;
+            if (sessionName) pwd = `${pwd} • ${sessionName}`;
+          }
           const row1Left = theme.fg("dim", pwd);
 
           const model = ctx.model;
@@ -356,9 +376,13 @@ export default function optchatSession(pi: ExtensionAPI) {
           let modelText = modelId;
           if (model?.reasoning) {
             const level = pi.getThinkingLevel() || "off";
-            modelText = level === "off" ? `${modelId} • thinking off` : `${modelId} • ${level}`;
+            if (narrow) {
+              modelText = level === "off" ? modelId : `${modelId}•${level.slice(0, 3)}`;
+            } else {
+              modelText = level === "off" ? `${modelId} • thinking off` : `${modelId} • ${level}`;
+            }
           }
-          if (footerData.getAvailableProviderCount() > 1 && model?.provider) {
+          if (!narrow && footerData.getAvailableProviderCount() > 1 && model?.provider) {
             modelText = `(${model.provider}) ${modelText}`;
           }
           const row1Right = theme.fg("muted", modelText);
@@ -383,21 +407,11 @@ export default function optchatSession(pi: ExtensionAPI) {
             }
           }
 
-          const statsParts: string[] = [];
-          if (input) statsParts.push(`↑${formatTokensCompact(input)}`);
-          if (output) statsParts.push(`↓${formatTokensCompact(output)}`);
-          if (cacheRead) statsParts.push(`R${formatTokensCompact(cacheRead)}`);
-          if (cacheWrite) statsParts.push(`W${formatTokensCompact(cacheWrite)}`);
-          if ((cacheRead > 0 || cacheWrite > 0) && latestCacheHitRate !== undefined) {
-            statsParts.push(`CH${latestCacheHitRate.toFixed(1)}%`);
-          }
-          if (cost > 0) statsParts.push(`$${cost.toFixed(3)}`);
-
           const ctxUsage = ctx.getContextUsage();
           const ctxWindow = ctxUsage?.contextWindow ?? model?.contextWindow ?? 0;
           const ctxPctVal = ctxUsage?.percent ?? 0;
           const ctxPctStr = ctxUsage?.percent !== null && ctxUsage?.percent !== undefined
-            ? `${ctxPctVal.toFixed(1)}%/${formatTokensCompact(ctxWindow)}`
+            ? (narrow ? `${Math.round(ctxPctVal)}%/${formatTokensCompact(ctxWindow)}` : `${ctxPctVal.toFixed(1)}%/${formatTokensCompact(ctxWindow)}`)
             : `?/${formatTokensCompact(ctxWindow)}`;
           const coloredCtx = ctxPctVal > 90
             ? theme.fg("error", ctxPctStr)
@@ -405,9 +419,36 @@ export default function optchatSession(pi: ExtensionAPI) {
               ? theme.fg("warning", ctxPctStr)
               : theme.fg("dim", ctxPctStr);
 
-          const dimStats = statsParts.length ? theme.fg("dim", statsParts.join(" ") + " ") : "";
-          const row2Left = dimStats + coloredCtx;
-          const row2Right = cachedStats ? formatOptchatFooterStyled(cachedStats, theme) : "";
+          let row2Left: string;
+          let row2Right: string;
+          if (narrow) {
+            // Mobile-first row 2: guarantee ctx% + mem usage stay visible (~40-55 cols)
+            const compactLeft = cost > 0 && width >= 50
+              ? `${theme.fg("dim", `$${cost.toFixed(2)} `)}${coloredCtx}`
+              : coloredCtx;
+            row2Left = compactLeft;
+            if (cachedStats) {
+              const memCompact = formatOptchatFooterStyled(cachedStats, theme, true);
+              row2Right = visibleWidth(row2Left) + 2 + visibleWidth(memCompact) <= width
+                ? memCompact
+                : formatOptchatFooterUltraCompact(cachedStats, theme);
+            } else {
+              row2Right = "";
+            }
+          } else {
+            const statsParts: string[] = [];
+            if (input) statsParts.push(`↑${formatTokensCompact(input)}`);
+            if (output) statsParts.push(`↓${formatTokensCompact(output)}`);
+            if (cacheRead) statsParts.push(`R${formatTokensCompact(cacheRead)}`);
+            if (cacheWrite) statsParts.push(`W${formatTokensCompact(cacheWrite)}`);
+            if ((cacheRead > 0 || cacheWrite > 0) && latestCacheHitRate !== undefined) {
+              statsParts.push(`CH${latestCacheHitRate.toFixed(1)}%`);
+            }
+            if (cost > 0) statsParts.push(`$${cost.toFixed(3)}`);
+            const dimStats = statsParts.length ? theme.fg("dim", statsParts.join(" ") + " ") : "";
+            row2Left = dimStats + coloredCtx;
+            row2Right = cachedStats ? formatOptchatFooterStyled(cachedStats, theme) : "";
+          }
 
           const lines = [
             alignRow(row1Left, row1Right, width, ellipsis),
@@ -499,7 +540,11 @@ export default function optchatSession(pi: ExtensionAPI) {
 
       // Publish colored compact stats under our own status key so coexisting footers (e.g. pi-better-devin-auth)
       // can place it on the right side of the stats row and suppress pi-optchat's verbose 'optchat' line.
-      ctx.ui.setStatus("optchat-compact", formatOptchatFooterStyled(cachedStats, ctx.ui.theme));
+      const termCols = process.stdout.columns || 120;
+      const statusText = termCols < 72
+        ? (termCols < 50 ? formatOptchatFooterUltraCompact(cachedStats, ctx.ui.theme) : formatOptchatFooterStyled(cachedStats, ctx.ui.theme, true))
+        : formatOptchatFooterStyled(cachedStats, ctx.ui.theme);
+      ctx.ui.setStatus("optchat-compact", statusText);
     }
     // Mount our own footer only when no provider-specific footer (like devin) owns it
     if (ctx.model?.provider !== "devin" && !requestFooterRender) {
@@ -535,7 +580,11 @@ export default function optchatSession(pi: ExtensionAPI) {
 
     cachedStats = readOptchatStats(activeProfile);
     if (cachedStats) {
-      ctx.ui.setStatus("optchat-compact", formatOptchatFooterStyled(cachedStats, ctx.ui.theme));
+      const termCols = process.stdout.columns || 120;
+      const statusText = termCols < 72
+        ? (termCols < 50 ? formatOptchatFooterUltraCompact(cachedStats, ctx.ui.theme) : formatOptchatFooterStyled(cachedStats, ctx.ui.theme, true))
+        : formatOptchatFooterStyled(cachedStats, ctx.ui.theme);
+      ctx.ui.setStatus("optchat-compact", statusText);
     }
     if (ctx.model?.provider !== "devin") {
       mountFooter(ctx);

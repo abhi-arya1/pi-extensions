@@ -10,6 +10,8 @@ import {
 	Key,
 	matchesKey,
 	Text,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
 	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
@@ -185,6 +187,11 @@ async function askQuestionsInTui(
 		let screen = 0;
 		let editing = false;
 		let cache: { width: number; lines: string[] } | undefined;
+		let optionHits: Array<{ yStart: number; yEnd: number; index: number }> = [];
+		let reviewSubmitHit: { y: number } | undefined;
+		let reviewRowHits: Array<{ yStart: number; yEnd: number; questionIndex: number }> = [];
+		let backHit: { y: number; xStart: number; xEnd: number } | undefined;
+		let cancelHit: { y: number; xStart: number; xEnd: number } | undefined;
 
 		const refresh = () => {
 			cache = undefined;
@@ -282,6 +289,12 @@ async function askQuestionsInTui(
 		};
 
 		function render(width: number) {
+			optionHits = [];
+			reviewSubmitHit = undefined;
+			reviewRowHits = [];
+			backHit = undefined;
+			cancelHit = undefined;
+
 			const rule = theme.fg("borderMuted", "─".repeat(width));
 			const lines = [rule];
 			const add = (text = "") => lines.push(truncateToWidth(text, width));
@@ -318,13 +331,25 @@ async function askQuestionsInTui(
 				add(`  ${theme.fg("accent", theme.bold("Review"))}  ${stepPills}`);
 				add();
 				for (const [index, item] of questions.entries()) {
+					const yStart = lines.length;
 					addWrapped(
 						`  ${theme.fg("success", "✓")} ${theme.fg("muted", `${item.header}:`)} `,
 						theme.fg("text", answers[index]?.answer || "(unanswered)"),
 					);
+					reviewRowHits.push({ yStart, yEnd: lines.length - 1, questionIndex: index });
 				}
 				add();
-				add(theme.fg("dim", "  enter submit  ·  h/← back  ·  esc cancel"));
+				const actionY = lines.length;
+				const submitLabel = "[Submit]";
+				const backLabel = "[← Back]";
+				const cancelLabel = "[Cancel]";
+				const actionLine = `  ${theme.fg("accent", theme.bold(submitLabel))}  ${theme.fg("muted", backLabel)}  ${theme.fg("dim", cancelLabel)}`;
+				add(actionLine);
+				reviewSubmitHit = { y: actionY };
+				const backXStart = 2 + submitLabel.length + 2;
+				backHit = { y: actionY, xStart: backXStart, xEnd: backXStart + backLabel.length - 1 };
+				const cancelXStart = backXStart + backLabel.length + 2;
+				cancelHit = { y: actionY, xStart: cancelXStart, xEnd: cancelXStart + cancelLabel.length - 1 };
 				lines.push(rule);
 				return lines;
 			}
@@ -343,6 +368,7 @@ async function askQuestionsInTui(
 			addWrapped("  ", theme.fg("text", theme.bold(current.question)));
 			add();
 			for (const [index, option] of options().entries()) {
+				const yStart = lines.length;
 				const active = index === selection();
 				const picked = option.isCustom
 					? answer()?.wasCustom === true
@@ -366,18 +392,89 @@ async function askQuestionsInTui(
 						add(`       ${line}`);
 					}
 				}
+				optionHits.push({ yStart, yEnd: lines.length - 1, index });
 			}
 			add();
-			add(
-				theme.fg(
-					"dim",
-					editing
-						? "  type answer  ·  enter save  ·  esc back"
-						: `  ↑↓/jk move  ·  1-9 pick  ·  enter select${screen > 0 ? "  ·  h/← back" : ""}  ·  esc cancel`,
-				),
-			);
+			const hintY = lines.length;
+			if (editing) {
+				add(theme.fg("dim", "  type answer  ·  enter save  ·  esc back"));
+			} else if (width < 56) {
+				const parts: string[] = [];
+				let x = 2;
+				if (screen > 0) {
+					const b = "[← Back]";
+					parts.push(theme.fg("muted", b));
+					backHit = { y: hintY, xStart: x, xEnd: x + b.length - 1 };
+					x += b.length + 2;
+				}
+				const c = "[Cancel]";
+				parts.push(theme.fg("dim", c));
+				cancelHit = { y: hintY, xStart: x, xEnd: x + c.length - 1 };
+				add(`  ${parts.join("  ")}  ${theme.fg("dim", "tap/1-9")}`);
+			} else {
+				add(
+					theme.fg(
+						"dim",
+						`  ↑↓/jk move  ·  tap/1-9/enter pick${screen > 0 ? "  ·  h/← back" : ""}  ·  esc cancel`,
+					),
+				);
+			}
 			lines.push(rule);
 			return lines;
+		}
+
+		function handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+			if (event.type === "press" && event.button === "left") {
+				return { handled: true, focus: true };
+			}
+			if (event.type !== "click" || event.button !== "left") {
+				return undefined;
+			}
+			const { x, y } = event;
+
+			if (editing) {
+				return { handled: true };
+			}
+
+			if (cancelHit && y === cancelHit.y && x >= cancelHit.xStart && x <= cancelHit.xEnd) {
+				addResult("cancelled");
+				return { handled: true };
+			}
+
+			if (backHit && y === backHit.y && x >= backHit.xStart && x <= backHit.xEnd) {
+				if (screen > 0) {
+					screen -= 1;
+					refresh();
+				}
+				return { handled: true, render: true };
+			}
+
+			if (inReview()) {
+				// Clicking a reviewed answer jumps back to that question to change it
+				for (const hit of reviewRowHits) {
+					if (y >= hit.yStart && y <= hit.yEnd) {
+						screen = hit.questionIndex;
+						refresh();
+						return { handled: true, render: true };
+					}
+				}
+				if (reviewSubmitHit && y === reviewSubmitHit.y) {
+					addResult("answered");
+					return { handled: true };
+				}
+				return { handled: true };
+			}
+
+			// Tap/click any option row (including its description) to select it immediately
+			for (const hit of optionHits) {
+				if (y >= hit.yStart && y <= hit.yEnd) {
+					selections[screen] = hit.index;
+					select();
+					return { handled: true, render: true };
+				}
+			}
+
+			return { handled: true };
 		}
 
 		function handleInput(data: string) {
@@ -450,6 +547,7 @@ async function askQuestionsInTui(
 				cache = undefined;
 			},
 			handleInput,
+			handleMouse,
 		};
 	});
 }
