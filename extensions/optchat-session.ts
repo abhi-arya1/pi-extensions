@@ -72,17 +72,17 @@ export function ensureSessionProfile(name: string, home = optchatHome()): string
   const configPath = path.join(dir, "config.json");
   if (!existsSync(configPath)) {
     const config = {
-      compactor: { provider: "openrouter", model: "upstage/solar-mini-4-5", thinking: "off" },
+      compactor: { provider: "openrouter", model: "deepseek/deepseek-v4.1-flash", thinking: "off" },
       subagent: { provider: "devin", model: "gemini-4-neon", thinking: "medium" },
       subagentLevels: 1,
       maxAgents: 8,
       groupReports: false,
       previousExchange: true,
       previousExchangeKB: 16,
-      memorySearch: false,
-      summaryAcceptBytes: 640,
+      memorySearch: true,
+      summaryAcceptBytes: 768,
       jobs: 8,
-      refreshAt: 0.3,
+      refreshAt: 0.5,
     };
     writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
   }
